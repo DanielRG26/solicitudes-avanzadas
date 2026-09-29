@@ -1,0 +1,125 @@
+# ============================================================================
+# solicitudes-avanzadas.http  -  Taller: Contratos Polimórficos, Proyecciones
+# Anidadas y Actualización Parcial Segura (API del Hotel)
+#
+# Ejecutable con la extensión "REST Client" de VS Code (humao.rest-client).
+# Ejecuta los bloques EN ORDEN con "Send Request" (los ids se encadenan solos).
+# ============================================================================
+
+@baseUrl = http://localhost:8080
+
+### ----------------------------------------------------------------------------
+### PREPARACIÓN A: crear un cliente de prueba
+# @name crearCliente
+POST {{baseUrl}}/api/clientes
+Content-Type: application/json
+
+{
+  "nombre": "Ana Maria Torres",
+  "email": "ana.torres@correo.com"
+}
+
+### PREPARACIÓN B: habitación estándar
+# @name crearEstandar
+POST {{baseUrl}}/api/habitaciones/estandar
+Content-Type: application/json
+
+{
+  "numero": "E-101",
+  "precioPorNoche": 120.0,
+  "capacidadMaxima": 2,
+  "camasIndividuales": 2
+}
+
+### ============================================================================
+### PRUEBA 1 - Creación de Suite Presidencial
+### Esperado: 201 Created + Location + id generado en el cuerpo ("tipo": "SUITE")
+# @name crearSuite
+POST {{baseUrl}}/api/habitaciones/suites
+Content-Type: application/json
+
+{
+  "numero": "P05-501",
+  "precioPorNoche": 350.0,
+  "capacidadMaxima": 2,
+  "jacuzziPrivado": true,
+  "incluyeMayordomo": true
+}
+
+### PREPARACIÓN C: reserva de 2 noches en la estándar (2 x 120 = 240)
+# @name reserva1
+POST {{baseUrl}}/api/reservas
+Content-Type: application/json
+
+{
+  "clienteId": "{{crearCliente.response.body.id}}",
+  "habitacionId": "{{crearEstandar.response.body.id}}",
+  "fechaInicio": "2026-10-01T14:00:00",
+  "fechaFin": "2026-10-03T14:00:00"
+}
+
+### PREPARACIÓN D: reserva de 3 noches en la suite (3 x 350 = 1050)
+# @name reserva2
+POST {{baseUrl}}/api/reservas
+Content-Type: application/json
+
+{
+  "clienteId": "{{crearCliente.response.body.id}}",
+  "habitacionId": "{{crearSuite.response.body.id}}",
+  "fechaInicio": "2026-11-10T14:00:00",
+  "fechaFin": "2026-11-13T14:00:00"
+}
+
+### PREPARACIÓN E: confirmar la reserva 2 (PENDIENTE -> CONFIRMADA)
+PATCH {{baseUrl}}/api/reservas/{{reserva2.response.body.id}}/confirmar
+
+### ============================================================================
+### PRUEBA 2 - Consulta polimórfica
+### Esperado: 200 OK, array donde conviven ESTANDAR (camasIndividuales) y
+### SUITE (jacuzziPrivado, incluyeMayordomo), cada uno con su campo "tipo".
+GET {{baseUrl}}/api/habitaciones
+
+### ============================================================================
+### PRUEBA 3 - Resumen ejecutivo del cliente
+### Esperado: 200 OK, totalReservasRealizadas = 2, montoTotalGastado = 1290.0
+### y reservasRecientes embebidas (sin el cliente dentro, sin ciclos).
+GET {{baseUrl}}/api/clientes/{{crearCliente.response.body.id}}/resumen
+
+### ============================================================================
+### PRUEBA 4 - Actualización selectiva (PATCH)
+### Esperado: 200 OK; solo cambia "nombre". email, activo y penalizaciones intactos.
+PATCH {{baseUrl}}/api/clientes/{{crearCliente.response.body.id}}
+Content-Type: application/json
+
+{
+  "nombre": "Nuevo Nombre Modificado"
+}
+
+### Verificación de lo persistido tras el PATCH (email/activo/penalizaciones iguales)
+GET {{baseUrl}}/api/clientes/{{crearCliente.response.body.id}}
+
+### ----------------------------------------------------------------------------
+### EXTRA - Mass Assignment bloqueado: activo/penalizaciones se ignoran
+PATCH {{baseUrl}}/api/clientes/{{crearCliente.response.body.id}}
+Content-Type: application/json
+
+{
+  "nombre": "Intento de sobre-asignacion",
+  "activo": false,
+  "penalizaciones": 9
+}
+
+### EXTRA - Errores semánticos: 404 (cliente inexistente)
+GET {{baseUrl}}/api/clientes/00000000-0000-0000-0000-000000000000/resumen
+
+### EXTRA - 400 (validación) y 409 (número de habitación duplicado)
+POST {{baseUrl}}/api/habitaciones/suites
+Content-Type: application/json
+
+{
+  "numero": "P05-501",
+  "precioPorNoche": 350.0,
+  "capacidadMaxima": 2,
+  "jacuzziPrivado": true,
+  "incluyeMayordomo": true
+}
